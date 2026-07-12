@@ -14,10 +14,10 @@ const ROLE_ACCESS_HINTS: Record<Role, string> = {
 };
 
 const DEMO_CREDENTIALS: { role: Role; email: string }[] = [
-  { role: 'Fleet Manager',     email: 'manager@transitops.in'    },
-  { role: 'Dispatcher',        email: 'dispatcher@transitops.in' },
-  { role: 'Safety Officer',    email: 'safety@transitops.in'     },
-  { role: 'Financial Analyst', email: 'analyst@transitops.in'    },
+  { role: 'Fleet Manager',     email: 'fleet@transitops.in'    },
+  { role: 'Dispatcher',        email: 'dispatch@transitops.in' },
+  { role: 'Safety Officer',    email: 'safety@transitops.in'   },
+  { role: 'Financial Analyst', email: 'finance@transitops.in'  },
 ];
 
 // ─── Forgot Password Modal ─────────────────────────────────────────────────────

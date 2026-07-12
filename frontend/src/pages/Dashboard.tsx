@@ -5,7 +5,7 @@ import { KpiCard } from '../components/shared/KpiCard';
 import { StatusBadge } from '../components/shared/StatusBadge';
 import { DataTable } from '../components/shared/DataTable';
 import {
-  apiGetTrips, apiGetVehicles, apiGetDrivers,
+  apiGetTrips, apiGetVehicles, apiGetDrivers, apiGetDashboardKpis,
   type Trip, type Vehicle, type Driver,
 } from '../api';
 
@@ -24,6 +24,16 @@ export default function Dashboard() {
   const [trips, setTrips]         = useState<Trip[]>([]);
   const [vehicles, setVehicles]   = useState<Vehicle[]>([]);
   const [drivers, setDrivers]     = useState<Driver[]>([]);
+  const [recentTrips, setRecentTrips] = useState<Array<{
+    id: number;
+    source: string;
+    destination: string;
+    vehicleName: string;
+    vehicleRegistrationNumber: string;
+    driverName: string;
+    status: string;
+    eta: string | null;
+  }>>([]);
 
   const [filterType,   setFilterType]   = useState('All');
   const [filterStatus, setFilterStatus] = useState('All');
@@ -34,14 +44,16 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchAll = async () => {
       setLoading(true);
-      const [tripRes, vehRes, drvRes] = await Promise.all([
+      const [tripRes, vehRes, drvRes, dashRes] = await Promise.all([
         apiGetTrips(),
         apiGetVehicles(),
         apiGetDrivers(),
+        apiGetDashboardKpis(),
       ]);
       if (tripRes.success && tripRes.data) setTrips(tripRes.data);
       if (vehRes.success && vehRes.data) setVehicles(vehRes.data);
       if (drvRes.success && drvRes.data) setDrivers(drvRes.data);
+      if (dashRes.success && dashRes.data) setRecentTrips(dashRes.data.recentTrips);
       setLoading(false);
     };
     fetchAll();
@@ -92,16 +104,6 @@ export default function Dashboard() {
       },
     };
   }, [filteredVehicles, filteredVehicleIds, trips, drivers]);
-
-  const recentTrips = useMemo(() => trips
-    .filter(t => filteredVehicleIds.has(t.vehicleId))
-    .filter(t => ['Dispatched', 'Draft', 'Completed'].includes(t.status))
-    .slice(-10)
-    .reverse(),
-  [trips, filteredVehicleIds]);
-
-  const vehName = (id: string) => vehicles.find(v => v.id === id)?.name ?? id;
-  const drvName = (id: string) => drivers.find(d => d.id === id)?.name ?? id;
 
   const totalVehicles = Object.values(kpis.vehicleStatusBreakdown).reduce((a, b) => a + b, 0);
 
@@ -165,11 +167,12 @@ export default function Dashboard() {
             </div>
             <DataTable
               columns={[
-                { key: 'id',      label: 'Trip ID', render: t => <span className="font-mono text-xs text-accent">{t.id}</span> },
-                { key: 'vehicle', label: 'Vehicle', render: t => <span className="text-xs">{vehName(t.vehicleId)}</span> },
-                { key: 'driver',  label: 'Driver',  render: t => <span className="text-xs">{drvName(t.driverId)}</span> },
-                { key: 'status',  label: 'Status',  render: t => <StatusBadge status={t.status} /> },
-                { key: 'eta',     label: 'ETA',     render: t => <span className="text-xs">{t.eta}</span> },
+                { key: 'id',      label: 'Trip ID',  render: t => <span className="font-mono text-xs text-accent">#{t.id}</span> },
+                { key: 'route',   label: 'Route',    render: t => <span className="text-xs">{t.source} → {t.destination}</span> },
+                { key: 'vehicle', label: 'Vehicle',  render: t => <span className="text-xs">{t.vehicleName}</span> },
+                { key: 'driver',  label: 'Driver',   render: t => <span className="text-xs">{t.driverName}</span> },
+                { key: 'status',  label: 'Status',   render: t => <StatusBadge status={t.status} /> },
+                { key: 'eta',     label: 'ETA',      render: t => <span className="text-xs text-base-muted">{t.eta ?? '—'}</span> },
               ]}
               data={recentTrips}
               emptyMessage="No recent trips found."

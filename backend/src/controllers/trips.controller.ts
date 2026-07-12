@@ -11,6 +11,7 @@ import {
   createFuelLogFromTripCompletion,
   FuelLogCreationPayload,
 } from './fuel.controller';
+import { parseIdParam } from '../utils/parseId';
 
 const prisma = new PrismaClient();
 
@@ -181,7 +182,11 @@ export const dispatchTrip = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { id } = req.params;
+    const id = parseIdParam(req.params.id);
+    if (id === null) {
+      res.status(400).json(fail('Invalid trip ID.'));
+      return;
+    }
 
     const trip = await prisma.trip.findUnique({
       where: { id },
@@ -202,7 +207,6 @@ export const dispatchTrip = async (
       return;
     }
 
-    // Status transition lives in statusEngine — not here
     await onTripDispatched(id);
 
     const updated = await prisma.trip.findUnique({
@@ -232,7 +236,12 @@ export const completeTrip = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { id } = req.params;
+    const id = parseIdParam(req.params.id);
+    if (id === null) {
+      res.status(400).json(fail('Invalid trip ID.'));
+      return;
+    }
+
     const {
       finalOdometerKm,
       fuelConsumedLiters,
@@ -308,7 +317,11 @@ export const cancelTrip = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { id } = req.params;
+    const id = parseIdParam(req.params.id);
+    if (id === null) {
+      res.status(400).json(fail('Invalid trip ID.'));
+      return;
+    }
 
     const trip = await prisma.trip.findUnique({
       where: { id },

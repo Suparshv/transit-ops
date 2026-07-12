@@ -19,7 +19,10 @@ const SERVICE_TYPES = [
 const MAINTENANCE_STATUSES = ['Active', 'Closed'] as const;
 
 export const createMaintenanceSchema = z.object({
-  vehicleId: z.string({ required_error: 'Vehicle is required' }).cuid(),
+  vehicleId: z
+    .number({ required_error: 'Vehicle is required' })
+    .int()
+    .positive('Vehicle is required'),
   serviceType: z.enum(SERVICE_TYPES, {
     required_error: 'Service type is required',
     invalid_type_error: `Service type must be one of: ${SERVICE_TYPES.join(', ')}`,

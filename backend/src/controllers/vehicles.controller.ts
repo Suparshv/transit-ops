@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { ok, fail } from '../utils/apiResponse';
+import { parseIdParam } from '../utils/parseId';
 import {
   CreateVehicleInput,
   UpdateVehicleInput,
@@ -79,8 +80,14 @@ export const getVehicle = async (
   res: Response
 ): Promise<void> => {
   try {
+    const id = parseIdParam(req.params.id);
+    if (id === null) {
+      res.status(400).json(fail('Invalid vehicle ID.'));
+      return;
+    }
+
     const vehicle = await prisma.vehicle.findUnique({
-      where: { id: req.params.id },
+      where: { id },
       include: {
         _count: { select: { trips: true, maintenanceLogs: true } },
       },
@@ -107,10 +114,16 @@ export const updateVehicle = async (
   res: Response
 ): Promise<void> => {
   try {
+    const id = parseIdParam(req.params.id);
+    if (id === null) {
+      res.status(400).json(fail('Invalid vehicle ID.'));
+      return;
+    }
+
     const data = req.body as UpdateVehicleInput;
 
     const existing = await prisma.vehicle.findUnique({
-      where: { id: req.params.id },
+      where: { id },
     });
     if (!existing) {
       res.status(404).json(fail('Vehicle not found.'));
@@ -118,7 +131,7 @@ export const updateVehicle = async (
     }
 
     const updated = await prisma.vehicle.update({
-      where: { id: req.params.id },
+      where: { id },
       data,
     });
 
@@ -149,16 +162,22 @@ export const deleteVehicle = async (
   res: Response
 ): Promise<void> => {
   try {
+    const id = parseIdParam(req.params.id);
+    if (id === null) {
+      res.status(400).json(fail('Invalid vehicle ID.'));
+      return;
+    }
+
     const existing = await prisma.vehicle.findUnique({
-      where: { id: req.params.id },
+      where: { id },
     });
     if (!existing) {
       res.status(404).json(fail('Vehicle not found.'));
       return;
     }
 
-    await prisma.vehicle.delete({ where: { id: req.params.id } });
-    res.status(200).json(ok({ deleted: true, id: req.params.id }));
+    await prisma.vehicle.delete({ where: { id } });
+    res.status(200).json(ok({ deleted: true, id }));
   } catch (err) {
     console.error('[vehicles.delete]', err);
     res.status(500).json(fail('Failed to delete vehicle.'));

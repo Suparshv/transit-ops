@@ -1,62 +1,100 @@
-/**
- * fuel.controller.ts — STUB FILE
- *
- * ⚠️  THIS STUB IS OWNED BY SUPARSHV. Do NOT implement the function body here.
- *
- * Joy calls createFuelLogFromTripCompletion() from trips.controller.ts when a
- * trip is completed (CLAUDE.md §3.5-A integration contract).
- * Suparshv writes the real implementation by hour 2 of the build.
- *
- * Integration contract (from CLAUDE.md §3.5-A):
- *   - Joy's trips.controller.ts calls this function on PATCH /api/trips/:id/complete
- *   - It receives: { tripId, vehicleId, finalOdometerKm, fuelConsumedLiters, fuelCost, date }
- *   - It writes a FuelLog row to the database (Suparshv owns the FuelLog write path)
- *   - Joy does NOT write directly to the FuelLog table
- *
- * Suparshv: replace the stub body below with the real Prisma write.
- * Do not change the function signature — trips.controller.ts depends on it.
- */
+// ─── Fuel Log Controller — OWNER: Suparshv ────────────────────────────────────
 
+import { Request, Response } from 'express';
+import { z } from 'zod';
+import prisma from '../lib/prisma';
+import { ok, fail } from '../utils/apiResponse';
+
+export const CreateFuelLogSchema = z.object({
+  vehicleId: z.number().int().positive({ message: 'vehicleId must be a positive integer' }),
+  tripId: z.number().int().positive().nullable().optional(),
+  date: z.string().datetime({ message: 'date must be a valid ISO 8601 datetime string' }),
+  liters: z.number().positive({ message: 'liters must be greater than 0' }),
+  fuelCost: z.number().positive({ message: 'fuelCost must be greater than 0' }),
+});
+
+/** Integration contract — Joy's trips.controller imports this type. */
 export interface FuelLogCreationPayload {
-  tripId: string;
-  vehicleId: string;
+  tripId: number;
+  vehicleId: number;
   finalOdometerKm: number;
   fuelConsumedLiters: number;
   fuelCost: number;
   date: Date;
 }
 
-/**
- * createFuelLogFromTripCompletion
- *
- * Called by trips.controller.ts on trip completion.
- * Suparshv owns the body — replace the stub below.
- *
- * @param payload - fuel log data from the complete-trip request body
- * @returns Promise<void> — throws on DB error (trips.controller.ts will catch)
- */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export const getAllFuelLogs = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const logs = await prisma.fuelLog.findMany({
+      orderBy: { date: 'desc' },
+      include: {
+        vehicle: { select: { id: true, registrationNumber: true, name: true } },
+        trip: { select: { id: true, source: true, destination: true } },
+      },
+    });
+    res.json(ok(logs));
+  } catch (err) {
+    console.error('[fuel] getAllFuelLogs error:', err);
+    res.status(500).json(fail('Failed to fetch fuel logs'));
+  }
+};
+
+export const createFuelLog = async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as z.infer<typeof CreateFuelLogSchema>;
+
+  try {
+    const vehicle = await prisma.vehicle.findUnique({ where: { id: body.vehicleId } });
+    if (!vehicle) {
+      res.status(404).json(fail(`Vehicle with id ${body.vehicleId} not found`));
+      return;
+    }
+
+    if (body.tripId) {
+      const trip = await prisma.trip.findUnique({ where: { id: body.tripId } });
+      if (!trip) {
+        res.status(404).json(fail(`Trip with id ${body.tripId} not found`));
+        return;
+      }
+      if (trip.vehicleId !== body.vehicleId) {
+        res.status(400).json(
+          fail(`Trip ${body.tripId} is assigned to vehicle ${trip.vehicleId}, not ${body.vehicleId}`)
+        );
+        return;
+      }
+    }
+
+    const log = await prisma.fuelLog.create({
+      data: {
+        vehicleId: body.vehicleId,
+        tripId: body.tripId ?? null,
+        date: new Date(body.date),
+        liters: body.liters,
+        fuelCost: body.fuelCost,
+      },
+      include: {
+        vehicle: { select: { id: true, registrationNumber: true, name: true } },
+        trip: { select: { id: true, source: true, destination: true } },
+      },
+    });
+
+    res.status(201).json(ok(log));
+  } catch (err) {
+    console.error('[fuel] createFuelLog error:', err);
+    res.status(500).json(fail('Failed to create fuel log'));
+  }
+};
+
+/** Called by Joy's trips.controller on PATCH /api/trips/:id/complete */
 export const createFuelLogFromTripCompletion = async (
   payload: FuelLogCreationPayload
 ): Promise<void> => {
-  // TODO: Suparshv — replace this stub with the real FuelLog Prisma write.
-  // Example implementation:
-  //
-  // const prisma = new PrismaClient();
-  // await prisma.fuelLog.create({
-  //   data: {
-  //     vehicleId: payload.vehicleId,
-  //     tripId: payload.tripId,
-  //     date: payload.date,
-  //     liters: payload.fuelConsumedLiters,
-  //     fuelCost: payload.fuelCost,
-  //   },
-  // });
-  //
-  // The stub currently does nothing — trips will complete without writing a
-  // fuel log until Suparshv implements this.
-  console.warn(
-    '[STUB] createFuelLogFromTripCompletion called — Suparshv needs to implement this. ' +
-      'Trip will complete but no FuelLog row will be written until the stub is replaced.'
-  );
+  await prisma.fuelLog.create({
+    data: {
+      vehicleId: payload.vehicleId,
+      tripId: payload.tripId,
+      date: payload.date,
+      liters: payload.fuelConsumedLiters,
+      fuelCost: payload.fuelCost,
+    },
+  });
 };

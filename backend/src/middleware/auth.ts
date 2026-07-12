@@ -4,13 +4,12 @@ import { fail } from '../utils/apiResponse';
 import { Role, ALL_ROLES } from '../config/rolePermissions';
 
 export interface JwtPayload {
-  id: string;
+  id: number;
   email: string;
-  /** Role is selected at login and embedded in the JWT (CLAUDE.md §5 Decision 1). */
+  /** Role is selected at login and embedded in the JWT (CLAUDE.md §5). */
   role: Role;
 }
 
-// Extend Express Request to carry the decoded token
 declare global {
   namespace Express {
     interface Request {
@@ -25,8 +24,6 @@ declare global {
  * Verifies the Bearer JWT on every protected route.
  * On success: attaches req.user = { id, email, role }.
  * On failure: 401 with standard error shape.
- *
- * Usage: router.get('/...', requireAuth, checkRole('fleet', 'view'), handler)
  */
 export const requireAuth = (
   req: Request,
@@ -50,8 +47,6 @@ export const requireAuth = (
 
     const decoded = jwt.verify(token, secret) as JwtPayload;
 
-    // Validate the role is still a known role (guards against stale tokens
-    // if the role list ever changes).
     if (!ALL_ROLES.includes(decoded.role)) {
       res.status(401).json(fail('Invalid role in token. Please log in again.'));
       return;

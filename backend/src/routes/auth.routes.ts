@@ -11,9 +11,6 @@ import {
 
 const router = Router();
 
-// Auth routes are NOT gated by checkRole (they're the entry point for auth).
-// requireAuth is applied to /me only.
-
 router.post('/signup', validate(signupSchema), signup);
 router.post('/login', validate(loginSchema), login);
 router.get('/me', requireAuth, me);

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { ok, fail } from '../utils/apiResponse';
+import { parseIdParam } from '../utils/parseId';
 import {
   CreateDriverInput,
   UpdateDriverInput,
@@ -82,8 +83,14 @@ export const getDriver = async (
   res: Response
 ): Promise<void> => {
   try {
+    const id = parseIdParam(req.params.id);
+    if (id === null) {
+      res.status(400).json(fail('Invalid driver ID.'));
+      return;
+    }
+
     const driver = await prisma.driver.findUnique({
-      where: { id: req.params.id },
+      where: { id },
       include: {
         _count: { select: { trips: true } },
       },
@@ -114,10 +121,16 @@ export const updateDriver = async (
   res: Response
 ): Promise<void> => {
   try {
+    const id = parseIdParam(req.params.id);
+    if (id === null) {
+      res.status(400).json(fail('Invalid driver ID.'));
+      return;
+    }
+
     const data = req.body as UpdateDriverInput;
 
     const existing = await prisma.driver.findUnique({
-      where: { id: req.params.id },
+      where: { id },
     });
     if (!existing) {
       res.status(404).json(fail('Driver not found.'));
@@ -137,7 +150,7 @@ export const updateDriver = async (
     }
 
     const updated = await prisma.driver.update({
-      where: { id: req.params.id },
+      where: { id },
       data,
     });
 
@@ -157,16 +170,22 @@ export const deleteDriver = async (
   res: Response
 ): Promise<void> => {
   try {
+    const id = parseIdParam(req.params.id);
+    if (id === null) {
+      res.status(400).json(fail('Invalid driver ID.'));
+      return;
+    }
+
     const existing = await prisma.driver.findUnique({
-      where: { id: req.params.id },
+      where: { id },
     });
     if (!existing) {
       res.status(404).json(fail('Driver not found.'));
       return;
     }
 
-    await prisma.driver.delete({ where: { id: req.params.id } });
-    res.status(200).json(ok({ deleted: true, id: req.params.id }));
+    await prisma.driver.delete({ where: { id } });
+    res.status(200).json(ok({ deleted: true, id }));
   } catch (err) {
     console.error('[drivers.delete]', err);
     res.status(500).json(fail('Failed to delete driver.'));

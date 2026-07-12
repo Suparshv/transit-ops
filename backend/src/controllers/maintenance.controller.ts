@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { ok, fail } from '../utils/apiResponse';
+import { parseIdParam } from '../utils/parseId';
 import { CreateMaintenanceInput } from '../schemas/maintenance.schema';
 import {
   onMaintenanceOpened,
@@ -98,7 +99,11 @@ export const closeMaintenance = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { id } = req.params;
+    const id = parseIdParam(req.params.id);
+    if (id === null) {
+      res.status(400).json(fail('Invalid maintenance record ID.'));
+      return;
+    }
 
     const record = await prisma.maintenanceLog.findUnique({
       where: { id },

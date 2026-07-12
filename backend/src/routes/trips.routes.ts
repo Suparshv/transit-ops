@@ -16,18 +16,7 @@ import {
 
 const router = Router();
 
-/**
- * RBAC per Section 5 matrix:
- *   Dispatcher      → full  (all trip operations)
- *   Safety Officer  → view  (read only)
- *   Fleet Manager   → none  (403)
- *   Financial Analyst → none (403)
- */
-
-// Read — Safety Officer (view) and Dispatcher (full satisfies view)
 router.get('/', requireAuth, checkRole('trips', 'view'), listTrips);
-
-// Write — Dispatcher only (full)
 router.post(
   '/',
   requireAuth,
@@ -35,12 +24,7 @@ router.post(
   validate(createTripSchema),
   createTrip
 );
-router.patch(
-  '/:id/dispatch',
-  requireAuth,
-  checkRole('trips', 'full'),
-  dispatchTrip
-);
+router.patch('/:id/dispatch', requireAuth, checkRole('trips', 'full'), dispatchTrip);
 router.patch(
   '/:id/complete',
   requireAuth,
@@ -48,11 +32,6 @@ router.patch(
   validate(completeTripSchema),
   completeTrip
 );
-router.patch(
-  '/:id/cancel',
-  requireAuth,
-  checkRole('trips', 'full'),
-  cancelTrip
-);
+router.patch('/:id/cancel', requireAuth, checkRole('trips', 'full'), cancelTrip);
 
 export default router;

@@ -16,19 +16,8 @@ import {
 
 const router = Router();
 
-/**
- * RBAC per Section 5 matrix:
- *   Fleet Manager   → full  (read + write)
- *   Dispatcher      → view  (read only)
- *   Financial Analyst → view (read only)
- *   Safety Officer  → none  (403)
- */
-
-// Read routes — 'view' level (Fleet Manager, Dispatcher, Financial Analyst)
 router.get('/', requireAuth, checkRole('fleet', 'view'), listVehicles);
 router.get('/:id', requireAuth, checkRole('fleet', 'view'), getVehicle);
-
-// Write routes — 'full' level (Fleet Manager only)
 router.post(
   '/',
   requireAuth,

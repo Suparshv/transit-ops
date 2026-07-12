@@ -18,8 +18,14 @@ export const createTripSchema = z.object({
     .string({ required_error: 'Destination is required' })
     .min(1, 'Destination cannot be empty')
     .trim(),
-  vehicleId: z.string({ required_error: 'Vehicle is required' }).cuid(),
-  driverId: z.string({ required_error: 'Driver is required' }).cuid(),
+  vehicleId: z
+    .number({ required_error: 'Vehicle is required' })
+    .int()
+    .positive('Vehicle is required'),
+  driverId: z
+    .number({ required_error: 'Driver is required' })
+    .int()
+    .positive('Driver is required'),
   cargoWeightKg: z
     .number({ required_error: 'Cargo weight is required' })
     .positive('Cargo weight must be greater than 0'),

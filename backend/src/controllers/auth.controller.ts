@@ -172,17 +172,61 @@ export const me = async (req: Request, res: Response): Promise<void> => {
 
 // ---------------------------------------------------------------------------
 // POST /api/auth/forgot-password
-// Not implemented — no email server in hackathon scope.
+//
+// Hackathon implementation:
+//   - Generates a cryptographically random 32-byte hex token.
+//   - Stores it + 1-hour expiry on the User row (resetToken, resetTokenExpiry).
+//   - Logs the token to console so the demo can prove it works without SMTP.
+//   - Always returns a generic 200 success — never leaks which emails exist.
+//
+// A real implementation would email `${FRONTEND_URL}/reset-password?token=...`
+// instead of console.log. Swap that one line when email infra is available.
 // ---------------------------------------------------------------------------
 
 export const forgotPassword = async (
-  _req: Request,
+  req: Request,
   res: Response
 ): Promise<void> => {
-  res.status(501).json(
-    fail(
-      'Forgot password is not implemented in this version. ' +
-        'Contact your administrator to reset your password.'
-    )
-  );
+  try {
+    const { email } = req.body as { email?: string };
+
+    if (!email || typeof email !== 'string') {
+      res.status(400).json(fail('email is required.'));
+      return;
+    }
+
+    const user = await prisma.user.findUnique({ where: { email } });
+
+    if (user) {
+      // Generate a cryptographically random token (64 hex chars = 32 bytes)
+      const { randomBytes } = await import('crypto');
+      const resetToken = randomBytes(32).toString('hex');
+      const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { resetToken, resetTokenExpiry },
+      });
+
+      // ── Demo output ────────────────────────────────────────────────────────
+      // In production, send an email with this link instead.
+      // For the hackathon demo, paste this URL into the browser to simulate.
+      const resetLink = `${process.env.FRONTEND_URL ?? 'http://localhost:5173'}/reset-password?token=${resetToken}`;
+      console.log(`\n🔑 [forgot-password] Reset token for ${email}:`);
+      console.log(`   Token : ${resetToken}`);
+      console.log(`   Link  : ${resetLink}`);
+      console.log(`   Expiry: ${resetTokenExpiry.toISOString()}\n`);
+    }
+
+    // Always return generic success — never reveal whether email is registered
+    res.status(200).json(
+      ok({
+        message:
+          'If an account with that email exists, a password reset link has been generated. Check the server console for the demo token.',
+      })
+    );
+  } catch (err) {
+    console.error('[auth.forgotPassword]', err);
+    res.status(500).json(fail('Failed to process request. Please try again.'));
+  }
 };

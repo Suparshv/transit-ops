@@ -107,10 +107,10 @@ export default function TripDispatcher() {
   // Create Trip form state
   const [form, setForm] = useState({
     source: '', destination: '', vehicleId: '', driverId: '',
-    cargoWeight: 0, plannedDistance: 0, eta: 'TBD',
+    cargoWeightKg: 0, plannedDistanceKm: 0, eta: 'TBD',
   });
   const [validationError, setValidationError] = useState<{
-    vehicleCapacity: number; cargoWeight: number; exceeded: number;
+    vehicleCapacity: number; cargoWeightKg: number; exceeded: number;
   } | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -135,12 +135,12 @@ export default function TripDispatcher() {
   useEffect(() => { fetchAll(); }, []);
 
   // Check cargo vs capacity on vehicle select
-  const checkCapacity = (vehicleId: string, cargoWeight: number) => {
-    if (!vehicleId || cargoWeight <= 0) { setValidationError(null); return; }
+  const checkCapacity = (vehicleId: string, cargoWeightKg: number) => {
+    if (!vehicleId || cargoWeightKg <= 0) { setValidationError(null); return; }
     const vehicle = availVehicles.find(v => v.id === vehicleId);
     if (!vehicle) return;
-    if (cargoWeight > vehicle.capacity) {
-      setValidationError({ vehicleCapacity: vehicle.capacity, cargoWeight, exceeded: cargoWeight - vehicle.capacity });
+    if (cargoWeightKg > vehicle.capacityKg) {
+      setValidationError({ vehicleCapacity: vehicle.capacityKg, cargoWeightKg, exceeded: cargoWeightKg - vehicle.capacityKg });
     } else {
       setValidationError(null);
     }
@@ -149,10 +149,10 @@ export default function TripDispatcher() {
   const handleFormChange = (field: string, value: string | number) => {
     const newForm = { ...form, [field]: value };
     setForm(newForm);
-    if (field === 'vehicleId' || field === 'cargoWeight') {
+    if (field === 'vehicleId' || field === 'cargoWeightKg') {
       checkCapacity(
         field === 'vehicleId' ? String(value) : form.vehicleId,
-        field === 'cargoWeight' ? Number(value) : form.cargoWeight,
+        field === 'cargoWeightKg' ? Number(value) : form.cargoWeightKg,
       );
     }
   };

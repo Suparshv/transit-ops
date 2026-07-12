@@ -15,8 +15,8 @@ function isExpired(expiry: string): boolean {
 
 function AddDriverModal({ onClose, onSave }: { onClose: () => void; onSave: (d: Driver) => void }) {
   const [form, setForm] = useState({
-    name: '', licenseNo: '', category: 'LMV', licenseExpiry: '',
-    contact: '', tripCompletionPct: 100, safetyRating: 'Good' as Driver['safetyRating'], status: 'Available' as DriverStatus,
+    name: '', licenseNumber: '', licenseCategory: 'LMV', licenseExpiryDate: '',
+    contact: '', tripCompletionPct: 100, status: 'Available' as DriverStatus,
   });
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -49,27 +49,21 @@ function AddDriverModal({ onClose, onSave }: { onClose: () => void; onSave: (d: 
             </div>
             <div>
               <label className="form-label">License No.</label>
-              <input className="form-input" required value={form.licenseNo} onChange={e => setForm(f => ({ ...f, licenseNo: e.target.value }))} placeholder="MH-1234567" />
+              <input className="form-input" required value={form.licenseNumber} onChange={e => setForm(f => ({ ...f, licenseNumber: e.target.value }))} placeholder="MH-1234567" />
             </div>
             <div>
               <label className="form-label">Category</label>
-              <select className="form-input cursor-pointer" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
+              <select className="form-input cursor-pointer" value={form.licenseCategory} onChange={e => setForm(f => ({ ...f, licenseCategory: e.target.value }))}>
                 {CATEGORIES.map(c => <option key={c} style={{ background: '#18181d' }}>{c}</option>)}
               </select>
             </div>
             <div>
               <label className="form-label">License Expiry</label>
-              <input type="date" className="form-input" required value={form.licenseExpiry} onChange={e => setForm(f => ({ ...f, licenseExpiry: e.target.value }))} />
+              <input type="date" className="form-input" required value={form.licenseExpiryDate} onChange={e => setForm(f => ({ ...f, licenseExpiryDate: e.target.value }))} />
             </div>
             <div>
               <label className="form-label">Contact</label>
               <input className="form-input" required value={form.contact} onChange={e => setForm(f => ({ ...f, contact: e.target.value }))} placeholder="+91-9876543210" />
-            </div>
-            <div>
-              <label className="form-label">Safety Rating</label>
-              <select className="form-input cursor-pointer" value={form.safetyRating} onChange={e => setForm(f => ({ ...f, safetyRating: e.target.value as Driver['safetyRating'] }))}>
-                {['Excellent', 'Good', 'Fair', 'Poor'].map(r => <option key={r} style={{ background: '#18181d' }}>{r}</option>)}
-              </select>
             </div>
             <div>
               <label className="form-label">Trip Completion %</label>
@@ -152,19 +146,18 @@ export default function DriversSafety() {
                     {d.name}
                   </span>
                 )},
-                { key: 'licenseNo',        label: 'License No.'      },
-                { key: 'category',         label: 'Category'         },
-                { key: 'licenseExpiry',    label: 'Expiry',          render: d => (
+                { key: 'licenseNumber',     label: 'License No.'      },
+                { key: 'licenseCategory',   label: 'Category'         },
+                { key: 'licenseExpiryDate', label: 'Expiry',          render: d => (
                   <div className="flex items-center gap-2">
-                    <span className={isExpired(d.licenseExpiry) ? 'text-red-400 line-through text-xs' : 'text-xs'}>
-                      {d.licenseExpiry}
+                    <span className={isExpired(d.licenseExpiryDate) ? 'text-red-400 line-through text-xs' : 'text-xs'}>
+                      {d.licenseExpiryDate}
                     </span>
-                    {isExpired(d.licenseExpiry) && <ExpiredBadge />}
+                    {isExpired(d.licenseExpiryDate) && <ExpiredBadge />}
                   </div>
                 )},
                 { key: 'contact',          label: 'Contact',         render: d => <span className="text-xs">{d.contact}</span> },
                 { key: 'tripCompletionPct',label: 'Trip Compl. %',   render: d => <span className="font-semibold">{d.tripCompletionPct}%</span> },
-                { key: 'safetyRating',     label: 'Safety',          render: d => <StatusBadge status={d.safetyRating} /> },
                 { key: 'status',           label: 'Status',          render: d => <StatusBadge status={d.status} /> },
                 ...(canEdit ? [{
                   key: 'actions', label: '',

@@ -30,9 +30,8 @@ export interface Driver {
   licenseNumber: string;
   licenseCategory: string;
   licenseExpiryDate: string;
-  contactNumber: string;
+  contact: string;
   tripCompletionPct: number;
-  safetyRating: 'Excellent' | 'Good' | 'Fair' | 'Poor';
   status: DriverStatus;
 }
 

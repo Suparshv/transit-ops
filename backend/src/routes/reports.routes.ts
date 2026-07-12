@@ -12,12 +12,7 @@ import {
 
 const router = Router();
 
-// /dashboard is intentionally exempt from checkRole — it is the post-login landing page
-// visible to ALL four roles (Design.md Screen 1; CLAUDE.md §4 Screen 0 caption maps
-// Dispatcher → "Dashboard, Trips" and Safety Officer → "Drivers, Compliance").
-// Gating it with checkRole('analytics', 'view') would lock out Dispatchers and Safety
-// Officers the moment they log in. The deeper analytics routes below remain
-// analytics-module-gated as per the RBAC matrix (CLAUDE.md §5).
+// Intentionally NOT gated by checkRole — Dashboard KPIs are visible to all roles as the post-login landing page (see Design.md Screen 1 / Screen 0 role-scope note).
 router.get('/dashboard', requireAuth, getDashboard);
 router.get('/utilization', requireAuth, checkRole('analytics', 'view'), getUtilization);
 router.get('/roi', requireAuth, checkRole('analytics', 'view'), getROI);

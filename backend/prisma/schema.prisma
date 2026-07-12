@@ -1,0 +1,223 @@
+// TransitOps — Prisma Schema
+// Joy owns this file. FuelLog and Expense models are defined here
+// but their write paths (fuel.routes.ts, expenses.routes.ts) belong to Suparshv.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum VehicleStatus {
+  Available
+  OnTrip
+  InShop
+  Retired
+}
+
+enum DriverStatus {
+  Available
+  OnTrip
+  OffDuty
+  Suspended
+}
+
+enum TripStatus {
+  Draft
+  Dispatched
+  Completed
+  Cancelled
+}
+
+enum MaintenanceStatus {
+  Active   // record open → vehicle In Shop
+  Closed   // record closed → vehicle Available (unless Retired)
+}
+
+enum ExpenseStatus {
+  Pending
+  Settled
+}
+
+// ---------------------------------------------------------------------------
+// User
+// ---------------------------------------------------------------------------
+
+model User {
+  id                   String   @id @default(cuid())
+  email                String   @unique
+  passwordHash         String
+  // failedLoginAttempts and isLocked are managed entirely server-side.
+  // Auth lockout: 5 failed attempts → isLocked = true.
+  // Design.md Screen 0 + CLAUDE.md Section 4 (Screen 0 spec).
+  failedLoginAttempts  Int      @default(0)
+  isLocked             Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Vehicle
+// ---------------------------------------------------------------------------
+
+model Vehicle {
+  id                 String        @id @default(cuid())
+  // Registration number must be globally unique (CLAUDE.md §6, rule 4.2).
+  // DB-level unique constraint gives us the hard guarantee; controller adds
+  // a friendly error message on collision.
+  registrationNumber String        @unique
+  name               String        // e.g. "Van-05", "Truck-01"
+  type               String        // e.g. "Van", "Truck", "Pickup"
+  capacityKg         Float         // max cargo load in kg (used in cargo weight check)
+  odometerKm         Float         @default(0)
+  acquisitionCost    Float         @default(0)
+  status             VehicleStatus @default(Available)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  // Relations
+  trips          Trip[]
+  maintenanceLogs MaintenanceLog[]
+  fuelLogs       FuelLog[]
+  expenses       Expense[]
+}
+
+// ---------------------------------------------------------------------------
+// Driver
+// ---------------------------------------------------------------------------
+
+model Driver {
+  id                  String       @id @default(cuid())
+  name                String
+  licenseNumber       String       @unique
+  licenseCategory     String       // e.g. "HMV", "LMV", "PSV"
+  // licenseExpiryDate drives the "expired license" check in trip assignment.
+  // CLAUDE.md §6 rule 4.2: drivers with expiry < today cannot be assigned.
+  licenseExpiryDate   DateTime
+  contact             String
+  tripCompletionPct   Float        @default(0) // updated on trip complete
+  status              DriverStatus @default(Available)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  // Relations
+  trips Trip[]
+}
+
+// ---------------------------------------------------------------------------
+// Trip
+// ---------------------------------------------------------------------------
+
+model Trip {
+  id                  String     @id @default(cuid())
+  source              String
+  destination         String
+  vehicleId           String
+  driverId            String
+  cargoWeightKg       Float
+  plannedDistanceKm   Float
+
+  // Populated on PATCH /api/trips/:id/complete
+  // These three fields feed into createFuelLogFromTripCompletion()
+  finalOdometerKm     Float?
+  fuelConsumedLiters  Float?
+  fuelCost            Float?
+
+  status              TripStatus @default(Draft)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  // Relations
+  vehicle  Vehicle   @relation(fields: [vehicleId], references: [id])
+  driver   Driver    @relation(fields: [driverId], references: [id])
+  fuelLogs FuelLog[]
+  expenses Expense[]
+}
+
+// ---------------------------------------------------------------------------
+// MaintenanceLog
+// ---------------------------------------------------------------------------
+
+model MaintenanceLog {
+  id          String            @id @default(cuid())
+  vehicleId   String
+  serviceType String            // e.g. "Oil Change", "Tyre Replacement"
+  cost        Float
+  date        DateTime
+  // Status drives statusEngine.onMaintenanceClosed():
+  //   Active → vehicle In Shop
+  //   Closed → vehicle Available (unless Retired)
+  status      MaintenanceStatus @default(Active)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  // Relations
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+}
+
+// ---------------------------------------------------------------------------
+// FuelLog
+// The schema is owned by Joy; the write path (fuel.routes.ts + controller)
+// is owned by Suparshv. Joy calls createFuelLogFromTripCompletion() from
+// trips.controller.ts; that function (Suparshv's) writes to this table.
+// ---------------------------------------------------------------------------
+
+model FuelLog {
+  id        String   @id @default(cuid())
+  vehicleId String
+  // tripId is nullable: fuel can be logged standalone via Suparshv's POST /api/fuel-logs
+  // OR auto-created on trip completion via createFuelLogFromTripCompletion().
+  tripId    String?
+  date      DateTime
+  liters    Float
+  fuelCost  Float
+  createdAt DateTime @default(now())
+
+  // Relations
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+  trip    Trip?   @relation(fields: [tripId], references: [id])
+}
+
+// ---------------------------------------------------------------------------
+// Expense
+// Schema owned by Joy; write path owned by Suparshv (expenses.routes.ts).
+// ---------------------------------------------------------------------------
+
+model Expense {
+  id               String        @id @default(cuid())
+  tripId           String?
+  vehicleId        String
+  toll             Float         @default(0)
+  other            Float         @default(0)
+  // maintenanceCost is the linked cost from a MaintenanceLog row, populated
+  // by Suparshv's controller when creating expense records.
+  maintenanceCost  Float         @default(0)
+  // total = toll + other + maintenanceCost (computed and stored for query efficiency)
+  total            Float         @default(0)
+  status           ExpenseStatus @default(Pending)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  // Relations
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+  trip    Trip?   @relation(fields: [tripId], references: [id])
+}
+
+// ---------------------------------------------------------------------------
+// Settings (singleton row — id is always "singleton")
+// Schema owned by Joy; route owned by Suparshv (settings.routes.ts).
+// ---------------------------------------------------------------------------
+
+model Settings {
+  id           String @id @default("singleton")
+  depotName    String @default("TransitOps Depot")
+  currency     String @default("INR (₹)")
+  distanceUnit String @default("Kilometers")
+}

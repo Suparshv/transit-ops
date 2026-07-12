@@ -1,16 +1,82 @@
 // api/index.ts
-// Unified API client.
-// All functions return { success, data, error } matching the backend response wrapper (CLAUDE.md Section 7).
-// To connect to the real Express backend: replace the mock implementations below
-// with fetch() calls to the endpoint URLs — the callers (pages/components) never change.
+// Real API client — all functions call the Express backend via fetch().
+// Response shape: { success: boolean, data: T | null, error: string | null }
+// All protected routes include the JWT as "Authorization: Bearer <token>".
+// Token is stored in localStorage under the key "transitops:token".
 
-import { cacheGet, cacheSet } from '../lib/offlineCache';
-import {
-  INITIAL_VEHICLES, INITIAL_DRIVERS, INITIAL_TRIPS,
-  INITIAL_MAINTENANCE, INITIAL_FUEL_LOGS, INITIAL_EXPENSES, INITIAL_SETTINGS,
-  type Vehicle, type Driver, type Trip, type MaintenanceRecord,
-  type FuelLog, type Expense, type VehicleStatus, type DriverStatus, type TripStatus,
-} from './mockData';
+const BASE_URL = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:5000';
+const TOKEN_KEY = 'transitops:token';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export type VehicleStatus = 'Available' | 'OnTrip' | 'InShop' | 'Retired';
+export type DriverStatus  = 'Available' | 'OnTrip' | 'OffDuty' | 'Suspended';
+export type TripStatus    = 'Draft' | 'Dispatched' | 'Completed' | 'Cancelled';
+
+export interface Vehicle {
+  id: number;
+  registrationNumber: string;
+  name: string;
+  type: 'Van' | 'Truck' | 'Bus' | 'Bike';
+  capacityKg: number;
+  odometerKm: number;
+  acquisitionCost: number;
+  status: VehicleStatus;
+  region: string;
+}
+
+export interface Driver {
+  id: number;
+  name: string;
+  licenseNumber: string;
+  licenseCategory: string;
+  licenseExpiryDate: string;
+  contactNumber: string;
+  tripCompletionPct: number;
+  safetyRating: 'Excellent' | 'Good' | 'Fair' | 'Poor';
+  status: DriverStatus;
+}
+
+export interface Trip {
+  id: number;
+  source: string;
+  destination: string;
+  vehicleId: number;
+  driverId: number;
+  cargoWeightKg: number;
+  plannedDistanceKm: number;
+  status: TripStatus;
+  note?: string;
+  createdAt: string;
+}
+
+export interface MaintenanceRecord {
+  id: number;
+  vehicleId: number;
+  serviceType: string;
+  cost: number;
+  date: string;
+  status: 'Active' | 'Completed';
+}
+
+export interface FuelLog {
+  id: number;
+  vehicleId: number;
+  date: string;
+  liters: number;
+  fuelCost: number;
+}
+
+export interface Expense {
+  id: number;
+  tripId: number;
+  vehicleId: number;
+  toll: number;
+  other: number;
+  maintenanceCost: number;
+  total: number;
+  status: 'Pending' | 'Approved' | 'Rejected';
+}
 
 // ─── Response wrapper ─────────────────────────────────────────────────────────
 
@@ -19,420 +85,367 @@ interface ApiResponse<T> {
   data: T | null;
   error: string | null;
 }
-const ok = <T>(data: T): ApiResponse<T> => ({ success: true, data, error: null });
-const fail = <T>(error: string): ApiResponse<T> => ({ success: false, data: null, error });
 
-/** Simulated async latency */
-const delay = (ms = 120) => new Promise(r => setTimeout(r, ms));
+const clientFail = <T>(error: string): ApiResponse<T> => ({
+  success: false,
+  data: null,
+  error,
+});
 
-// ─── LocalStorage-backed store ────────────────────────────────────────────────
+// ─── Token helpers ────────────────────────────────────────────────────────────
 
-function getStore<T>(key: string, seed: T): T {
-  const cached = cacheGet<T>(key);
-  if (cached !== null) return cached;
-  cacheSet(key, seed);
-  return seed;
+export function getToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
 }
-function setStore<T>(key: string, value: T): void {
-  cacheSet(key, value);
+
+export function setToken(token: string): void {
+  try {
+    localStorage.setItem(TOKEN_KEY, token);
+  } catch {}
 }
 
-function getVehicles(): Vehicle[]           { return getStore('vehicles', INITIAL_VEHICLES); }
-function getDrivers(): Driver[]             { return getStore('drivers', INITIAL_DRIVERS); }
-function getTrips(): Trip[]                 { return getStore('trips', INITIAL_TRIPS); }
-function getMaintenance(): MaintenanceRecord[] { return getStore('maintenance', INITIAL_MAINTENANCE); }
-function getFuelLogs(): FuelLog[]           { return getStore('fuelLogs', INITIAL_FUEL_LOGS); }
-function getExpenses(): Expense[]           { return getStore('expenses', INITIAL_EXPENSES); }
-function getSettings()                      { return getStore('settings', INITIAL_SETTINGS); }
+export function removeToken(): void {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+  } catch {}
+}
+
+// ─── Core fetch wrapper ───────────────────────────────────────────────────────
+
+async function apiFetch<T>(
+  path: string,
+  options: RequestInit = {},
+  auth = true,
+): Promise<ApiResponse<T>> {
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options.headers as Record<string, string> | undefined),
+    };
+
+    if (auth) {
+      const token = getToken();
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+    }
+
+    const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+    const json = await res.json();
+
+    // Backend always returns { success, data, error }
+    if (typeof json.success === 'boolean') {
+      return json as ApiResponse<T>;
+    }
+
+    // Unexpected shape — treat as error
+    return clientFail<T>(`Unexpected response from server (HTTP ${res.status})`);
+  } catch (err) {
+    return clientFail<T>(
+      err instanceof Error ? err.message : 'Network error — is the backend running?',
+    );
+  }
+}
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+export async function apiLogin(email: string, password: string, role: string) {
+  const res = await apiFetch<{ token: string; user: { id: number; email: string; role: string } }>(
+    '/api/auth/login',
+    {
+      method: 'POST',
+      body: JSON.stringify({ email, password, role }),
+    },
+    false, // no auth header needed for login
+  );
+
+  if (res.success && res.data?.token) {
+    setToken(res.data.token);
+  }
+
+  return res;
+}
+
+export async function apiForgotPassword(email: string) {
+  return apiFetch<null>(
+    '/api/auth/forgot-password',
+    { method: 'POST', body: JSON.stringify({ email }) },
+    false,
+  );
+}
 
 // ─── Vehicles ─────────────────────────────────────────────────────────────────
 
 export async function apiGetVehicles() {
-  await delay();
-  return ok(getVehicles());
+  return apiFetch<Vehicle[]>('/api/vehicles');
+}
+
+export async function apiGetAvailableVehicles() {
+  const res = await apiFetch<Vehicle[]>('/api/vehicles');
+  if (!res.success || !res.data) return res;
+  return { ...res, data: res.data.filter(v => v.status === 'Available') };
 }
 
 export async function apiCreateVehicle(data: Omit<Vehicle, 'id'>) {
-  await delay();
-  const vehicles = getVehicles();
-  if (vehicles.some(v => v.regNo === data.regNo)) {
-    return fail<Vehicle>('Registration number must be unique.');
-  }
-  const vehicle: Vehicle = { ...data, id: 'v' + Date.now() };
-  const updated = [...vehicles, vehicle];
-  setStore('vehicles', updated);
-  return ok(vehicle);
+  return apiFetch<Vehicle>('/api/vehicles', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
 }
 
-export async function apiUpdateVehicle(id: string, updates: Partial<Vehicle>) {
-  await delay();
-  const vehicles = getVehicles();
-  const idx = vehicles.findIndex(v => v.id === id);
-  if (idx === -1) return fail<Vehicle>('Vehicle not found.');
-  if (updates.regNo && vehicles.some(v => v.regNo === updates.regNo && v.id !== id)) {
-    return fail<Vehicle>('Registration number must be unique.');
-  }
-  vehicles[idx] = { ...vehicles[idx], ...updates };
-  setStore('vehicles', vehicles);
-  return ok(vehicles[idx]);
+export async function apiUpdateVehicle(id: number | string, updates: Partial<Vehicle>) {
+  return apiFetch<Vehicle>(`/api/vehicles/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
 }
 
-export async function apiDeleteVehicle(id: string) {
-  await delay();
-  const vehicles = getVehicles().filter(v => v.id !== id);
-  setStore('vehicles', vehicles);
-  return ok({ id });
+export async function apiDeleteVehicle(id: number | string) {
+  return apiFetch<{ id: number }>(`/api/vehicles/${id}`, { method: 'DELETE' });
 }
 
 // ─── Drivers ─────────────────────────────────────────────────────────────────
 
 export async function apiGetDrivers() {
-  await delay();
-  return ok(getDrivers());
+  return apiFetch<Driver[]>('/api/drivers');
+}
+
+export async function apiGetAvailableDrivers() {
+  const res = await apiFetch<Driver[]>('/api/drivers');
+  if (!res.success || !res.data) return res;
+  const today = new Date().toISOString().split('T')[0];
+  return {
+    ...res,
+    data: res.data.filter(
+      d => d.status === 'Available' && d.licenseExpiryDate >= today,
+    ),
+  };
 }
 
 export async function apiCreateDriver(data: Omit<Driver, 'id'>) {
-  await delay();
-  const driver: Driver = { ...data, id: 'd' + Date.now() };
-  setStore('drivers', [...getDrivers(), driver]);
-  return ok(driver);
+  return apiFetch<Driver>('/api/drivers', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
 }
 
-export async function apiUpdateDriver(id: string, updates: Partial<Driver>) {
-  await delay();
-  const drivers = getDrivers();
-  const idx = drivers.findIndex(d => d.id === id);
-  if (idx === -1) return fail<Driver>('Driver not found.');
-  drivers[idx] = { ...drivers[idx], ...updates };
-  setStore('drivers', drivers);
-  return ok(drivers[idx]);
+export async function apiUpdateDriver(id: number | string, updates: Partial<Driver>) {
+  return apiFetch<Driver>(`/api/drivers/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
 }
 
-export async function apiDeleteDriver(id: string) {
-  await delay();
-  setStore('drivers', getDrivers().filter(d => d.id !== id));
-  return ok({ id });
+export async function apiDeleteDriver(id: number | string) {
+  return apiFetch<{ id: number }>(`/api/drivers/${id}`, { method: 'DELETE' });
 }
 
-export async function apiToggleDriverStatus(id: string, status: DriverStatus) {
-  await delay();
+export async function apiToggleDriverStatus(id: number | string, status: DriverStatus) {
   return apiUpdateDriver(id, { status });
 }
 
 // ─── Trips ────────────────────────────────────────────────────────────────────
 
 export async function apiGetTrips() {
-  await delay();
-  return ok(getTrips());
+  return apiFetch<Trip[]>('/api/trips');
 }
 
-export async function apiCreateTrip(data: Omit<Trip, 'id' | 'status' | 'createdAt'>) {
-  await delay();
-  const vehicles = getVehicles();
-  const vehicle = vehicles.find(v => v.id === data.vehicleId);
-  if (!vehicle) return fail<Trip>('Vehicle not found.');
-
-  // Cargo weight validation
-  if (data.cargoWeight > vehicle.capacity) {
-    const exceeded = data.cargoWeight - vehicle.capacity;
-    return fail<Trip>(`Capacity exceeded by ${exceeded} kg — dispatch blocked. Vehicle capacity: ${vehicle.capacity} kg.`);
-  }
-
-  const trip: Trip = {
-    ...data,
-    id: 'TRP-' + String(Date.now()).slice(-4),
-    status: 'Draft',
-    createdAt: new Date().toISOString(),
-  };
-  setStore('trips', [...getTrips(), trip]);
-  return ok(trip);
+export async function apiCreateTrip(
+  data: Omit<Trip, 'id' | 'status' | 'createdAt'>,
+) {
+  return apiFetch<Trip>('/api/trips', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
 }
 
-export async function apiDispatchTrip(id: string) {
-  await delay();
-  const trips = getTrips();
-  const tripIdx = trips.findIndex(t => t.id === id);
-  if (tripIdx === -1) return fail<Trip>('Trip not found.');
-  const trip = trips[tripIdx];
-
-  // Status engine: flip Vehicle → On Trip, Driver → On Trip
-  await apiUpdateVehicle(trip.vehicleId, { status: 'On Trip' });
-  await apiUpdateDriver(trip.driverId, { status: 'On Trip' });
-
-  trips[tripIdx] = { ...trip, status: 'Dispatched', eta: '~' + Math.ceil(trip.plannedDistance / 60) + 'h' };
-  setStore('trips', trips);
-  return ok(trips[tripIdx]);
+export async function apiDispatchTrip(id: number | string) {
+  return apiFetch<Trip>(`/api/trips/${id}/dispatch`, { method: 'PATCH' });
 }
 
-export async function apiCompleteTrip(id: string, finalOdometer: number, litersConsumed: number) {
-  await delay();
-  const trips = getTrips();
-  const tripIdx = trips.findIndex(t => t.id === id);
-  if (tripIdx === -1) return fail<Trip>('Trip not found.');
-  const trip = trips[tripIdx];
-
-  // Completion pipeline: odometer → fuel log → expenses → Vehicle & Driver Available
-  // 1. Update vehicle odometer
-  const vehicles = getVehicles();
-  const vehicle = vehicles.find(v => v.id === trip.vehicleId);
-  if (vehicle) {
-    await apiUpdateVehicle(trip.vehicleId, { status: 'Available', odometer: finalOdometer });
-  }
-  // 2. Log fuel
-  const fuelLog: FuelLog = {
-    id: 'f' + Date.now(),
-    vehicleId: trip.vehicleId,
-    date: new Date().toISOString().split('T')[0],
-    liters: litersConsumed,
-    fuelCost: Math.round(litersConsumed * 100), // ~₹100/liter assumption
-  };
-  setStore('fuelLogs', [...getFuelLogs(), fuelLog]);
-  // 3. Auto-create expense record
-  const expense: Expense = {
-    id: 'e' + Date.now(),
-    tripId: id,
-    vehicleId: trip.vehicleId,
-    toll: 0,
-    other: 0,
-    maintenanceCost: 0,
-    total: fuelLog.fuelCost,
-    status: 'Pending',
-  };
-  setStore('expenses', [...getExpenses(), expense]);
-  // 4. Free driver
-  await apiUpdateDriver(trip.driverId, { status: 'Available' });
-
-  trips[tripIdx] = { ...trip, status: 'Completed', eta: 'Arrived' };
-  setStore('trips', trips);
-  return ok(trips[tripIdx]);
+export async function apiCompleteTrip(
+  id: number | string,
+  finalOdometer: number,
+  litersConsumed: number,
+) {
+  return apiFetch<Trip>(`/api/trips/${id}/complete`, {
+    method: 'PATCH',
+    body: JSON.stringify({ finalOdometerKm: finalOdometer, fuelConsumedLiters: litersConsumed }),
+  });
 }
 
-export async function apiCancelTrip(id: string) {
-  await delay();
-  const trips = getTrips();
-  const tripIdx = trips.findIndex(t => t.id === id);
-  if (tripIdx === -1) return fail<Trip>('Trip not found.');
-  const trip = trips[tripIdx];
-
-  if (trip.status === 'Dispatched') {
-    // Free vehicle and driver on cancel from dispatched state
-    await apiUpdateVehicle(trip.vehicleId, { status: 'Available' });
-    await apiUpdateDriver(trip.driverId, { status: 'Available' });
-  }
-
-  trips[tripIdx] = { ...trip, status: 'Cancelled', eta: '—' };
-  setStore('trips', trips);
-  return ok(trips[tripIdx]);
+export async function apiCancelTrip(id: number | string) {
+  return apiFetch<Trip>(`/api/trips/${id}/cancel`, { method: 'PATCH' });
 }
 
 // ─── Maintenance ──────────────────────────────────────────────────────────────
 
 export async function apiGetMaintenance() {
-  await delay();
-  return ok(getMaintenance());
+  return apiFetch<MaintenanceRecord[]>('/api/maintenance');
 }
 
-export async function apiCreateMaintenance(data: Omit<MaintenanceRecord, 'id'>) {
-  await delay();
-  const record: MaintenanceRecord = { ...data, id: 'm' + Date.now(), status: 'Active' };
-  setStore('maintenance', [...getMaintenance(), record]);
-  // Status engine: opening a maintenance record → vehicle goes In Shop
-  await apiUpdateVehicle(data.vehicleId, { status: 'In Shop' });
-  return ok(record);
+export async function apiCreateMaintenance(data: Omit<MaintenanceRecord, 'id' | 'status'>) {
+  return apiFetch<MaintenanceRecord>('/api/maintenance', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
 }
 
-export async function apiCloseMaintenance(id: string) {
-  await delay();
-  const records = getMaintenance();
-  const idx = records.findIndex(r => r.id === id);
-  if (idx === -1) return fail<MaintenanceRecord>('Record not found.');
-  const rec = records[idx];
-
-  records[idx] = { ...rec, status: 'Completed' };
-  setStore('maintenance', records);
-
-  // Status engine: closing maintenance → vehicle goes back to Available (unless Retired)
-  const vehicles = getVehicles();
-  const vehicle = vehicles.find(v => v.id === rec.vehicleId);
-  if (vehicle && vehicle.status !== 'Retired') {
-    await apiUpdateVehicle(rec.vehicleId, { status: 'Available' });
-  }
-  return ok(records[idx]);
+export async function apiCloseMaintenance(id: number | string) {
+  return apiFetch<MaintenanceRecord>(`/api/maintenance/${id}/close`, {
+    method: 'PATCH',
+  });
 }
 
 // ─── Fuel Logs ────────────────────────────────────────────────────────────────
 
 export async function apiGetFuelLogs() {
-  await delay();
-  return ok(getFuelLogs());
+  return apiFetch<FuelLog[]>('/api/fuel-logs');
 }
 
 export async function apiCreateFuelLog(data: Omit<FuelLog, 'id'>) {
-  await delay();
-  const log: FuelLog = { ...data, id: 'f' + Date.now() };
-  setStore('fuelLogs', [...getFuelLogs(), log]);
-  return ok(log);
+  return apiFetch<FuelLog>('/api/fuel-logs', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
 }
 
 // ─── Expenses ─────────────────────────────────────────────────────────────────
 
 export async function apiGetExpenses() {
-  await delay();
-  return ok(getExpenses());
+  return apiFetch<Expense[]>('/api/expenses');
 }
 
 export async function apiCreateExpense(data: Omit<Expense, 'id' | 'total'>) {
-  await delay();
-  const total = data.toll + data.other + data.maintenanceCost;
-  const expense: Expense = { ...data, id: 'e' + Date.now(), total };
-  setStore('expenses', [...getExpenses(), expense]);
-  return ok(expense);
+  return apiFetch<Expense>('/api/expenses', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
 }
 
 // ─── Reports / Dashboard KPIs ─────────────────────────────────────────────────
 
 export async function apiGetDashboardKpis() {
-  await delay();
-  const vehicles = getVehicles();
-  const drivers  = getDrivers();
-  const trips    = getTrips();
-
-  const activeVehicles  = vehicles.filter(v => v.status !== 'Retired');
-  const onTrip          = vehicles.filter(v => v.status === 'On Trip');
-  const available       = vehicles.filter(v => v.status === 'Available');
-  const inMaintenance   = vehicles.filter(v => v.status === 'In Shop');
-  const activeTrips     = trips.filter(t => t.status === 'Dispatched');
-  const pendingTrips    = trips.filter(t => t.status === 'Draft');
-  const driversOnDuty   = drivers.filter(d => d.status === 'On Trip');
-  const utilization     = activeVehicles.length > 0
-    ? Math.round((onTrip.length / activeVehicles.length) * 100) : 0;
-
-  return ok({
-    activeVehicles:     activeVehicles.length,
-    availableVehicles:  available.length,
-    vehiclesInMaint:    inMaintenance.length,
-    activeTrips:        activeTrips.length,
-    pendingTrips:       pendingTrips.length,
-    driversOnDuty:      driversOnDuty.length,
-    fleetUtilization:   utilization,
+  return apiFetch<{
+    kpis: {
+      activeVehicles: number;
+      availableVehicles: number;
+      vehiclesInMaintenance: number;
+      activeTrips: number;
+      pendingTrips: number;
+      driversOnDuty: number;
+      fleetUtilizationPct: number;
+    };
     vehicleStatusBreakdown: {
-      Available: available.length,
-      'On Trip': onTrip.length,
-      'In Shop': inMaintenance.length,
-      Retired:   vehicles.filter(v => v.status === 'Retired').length,
-    },
-  });
+      available: number;
+      onTrip: number;
+      inShop: number;
+      retired: number;
+    };
+    recentTrips: Array<{
+      id: number;
+      source: string;
+      destination: string;
+      vehicleName: string;
+      vehicleRegistrationNumber: string;
+      driverName: string;
+      status: string;
+      eta: string | null;
+    }>;
+  }>('/api/reports/dashboard');
 }
 
 export async function apiGetAnalyticsKpis() {
-  await delay();
-  const vehicles  = getVehicles();
-  const fuelLogs  = getFuelLogs();
-  const maintenance = getMaintenance();
-  const trips     = getTrips();
+  // Fan out to the four analytics endpoints in parallel
+  const [roiRes, costliestRes, revenueRes, utilizationRes] = await Promise.all([
+    apiFetch<{
+      summary: {
+        totalRevenue: number;
+        totalOperationalCost: number;
+        avgFuelEfficiencyKmL: number | null;
+      };
+      perVehicle: Array<{
+        vehicleId: number;
+        name: string;
+        type: string;
+        revenue: number;
+        operationalCost: number;
+        roi: number;
+        fuelEfficiencyKmL: number | null;
+      }>;
+    }>('/api/reports/roi'),
+    apiFetch<Array<{
+      vehicleId: number;
+      registrationNumber: string;
+      name: string;
+      type: string;
+      fuelCost: number;
+      maintenanceCost: number;
+      totalOperationalCost: number;
+    }>>('/api/reports/top-costliest'),
+    apiFetch<Array<{ label: string; revenue: number }>>(
+      '/api/reports/monthly-revenue',
+    ),
+    apiFetch<{ fleetUtilizationPct: number }>(
+      '/api/reports/utilization',
+    ),
+  ]);
 
-  const totalFuelCost = fuelLogs.reduce((s, f) => s + f.fuelCost, 0);
-  const totalMaintCost = maintenance.reduce((s, m) => s + m.cost, 0);
-  const totalFuelLiters = fuelLogs.reduce((s, f) => s + f.liters, 0);
-  const totalDistance = trips.filter(t => t.status === 'Completed')
-    .reduce((s, t) => s + t.plannedDistance, 0);
-  const fuelEfficiency = totalFuelLiters > 0
-    ? Math.round((totalDistance / totalFuelLiters) * 10) / 10 : 0;
+  // If any critical endpoint failed, surface the first error
+  if (!roiRes.success) return roiRes as any;
+  if (!costliestRes.success) return costliestRes as any;
+  if (!revenueRes.success) return revenueRes as any;
 
-  const activeVehicles = vehicles.filter(v => v.status !== 'Retired');
-  const onTrip = vehicles.filter(v => v.status === 'On Trip');
-  const utilization = activeVehicles.length > 0
-    ? Math.round((onTrip.length / activeVehicles.length) * 100) : 0;
+  const summary     = roiRes.data!.summary;
+  const costliest   = costliestRes.data!;
+  const monthly     = revenueRes.data!;
+  const utilization = utilizationRes.success ? utilizationRes.data!.fleetUtilizationPct : 0;
 
-  // Per vehicle ROI: Revenue = completed trips * plannedDistance * ₹30/km
-  const roiData = vehicles.map(v => {
-    const completedTrips = trips.filter(t => t.vehicleId === v.id && t.status === 'Completed');
-    const revenue = completedTrips.reduce((s, t) => s + t.plannedDistance * 30, 0);
-    const vFuel = fuelLogs.filter(f => f.vehicleId === v.id).reduce((s, f) => s + f.fuelCost, 0);
-    const vMaint = maintenance.filter(m => m.vehicleId === v.id).reduce((s, m) => s + m.cost, 0);
-    const roi = v.acqCost > 0 ? Math.round(((revenue - (vMaint + vFuel)) / v.acqCost) * 100) : 0;
-    const totalCost = vFuel + vMaint;
-    return { vehicle: v, revenue, totalCost, roi };
-  });
+  // Compute average ROI across all vehicles
+  const perVehicle = roiRes.data!.perVehicle;
+  const avgRoi =
+    perVehicle.length > 0
+      ? Math.round(perVehicle.reduce((s, v) => s + v.roi, 0) / perVehicle.length)
+      : 0;
 
-  const avgRoi = Math.round(roiData.reduce((s, r) => s + r.roi, 0) / roiData.length);
-  const topCostliest = [...roiData].sort((a, b) => b.totalCost - a.totalCost).slice(0, 3);
-
-  // Monthly revenue: group completed trips by month (last 7 months)
-  const now = new Date();
-  const monthlyRevenue = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - (6 - i), 1);
-    const label = d.toLocaleString('default', { month: 'short' });
-    const revenue = trips
-      .filter(t => {
-        const td = new Date(t.createdAt);
-        return t.status === 'Completed'
-          && td.getMonth() === d.getMonth()
-          && td.getFullYear() === d.getFullYear();
-      })
-      .reduce((s, t) => s + t.plannedDistance * 30, 0);
-    return { month: label, revenue };
-  });
-
-  return ok({
-    fuelEfficiency,
-    fleetUtilization: utilization,
-    operationalCost: totalFuelCost + totalMaintCost,
-    vehicleRoi: avgRoi,
-    topCostliest,
-    monthlyRevenue,
-  });
+  return {
+    success: true,
+    error: null,
+    data: {
+      fuelEfficiency:   summary.avgFuelEfficiencyKmL ?? 0,
+      fleetUtilization: utilization,
+      operationalCost:  summary.totalOperationalCost,
+      vehicleRoi:       avgRoi,
+      // Top 5 costliest — shape adapted to what Analytics.tsx expects
+      topCostliest: costliest.map(v => ({
+        vehicle:   { name: v.name },
+        totalCost: v.totalOperationalCost,
+      })),
+      // Monthly revenue — backend returns { label, revenue }; chart uses { month, revenue }
+      monthlyRevenue: monthly.map(m => ({ month: m.label, revenue: m.revenue })),
+    },
+  };
 }
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
 export async function apiGetSettings() {
-  await delay();
-  return ok(getSettings());
+  return apiFetch<{ depotName: string; currency: string; distanceUnit: string }>(
+    '/api/settings',
+  );
 }
 
-export async function apiUpdateSettings(data: Partial<typeof INITIAL_SETTINGS>) {
-  await delay();
-  const updated = { ...getSettings(), ...data };
-  setStore('settings', updated);
-  return ok(updated);
+export async function apiUpdateSettings(data: {
+  depotName?: string;
+  currency?: string;
+  distanceUnit?: string;
+}) {
+  return apiFetch<{ depotName: string; currency: string; distanceUnit: string }>(
+    '/api/settings',
+    { method: 'PATCH', body: JSON.stringify(data) },
+  );
 }
-
-// ─── Auth ─────────────────────────────────────────────────────────────────────
-// NOTE: Auth state (session, lockout) is managed in AuthContext.
-// When connecting to a real backend: POST /api/auth/login with { email, password, role }
-
-export async function apiLogin(email: string, password: string) {
-  await delay(300);
-  const { USERS } = await import('./mockData');
-  const user = USERS.find(u => u.email === email);
-  if (!user) return fail<typeof user>('Invalid credentials. Please check your email and password.');
-  if (user.password !== password) return fail<typeof user>('Invalid credentials. Please check your email and password.');
-  return ok(user);
-}
-
-// ─── Available-only filters (for dropdowns) ───────────────────────────────────
-
-export async function apiGetAvailableVehicles() {
-  await delay();
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const vehicles = getVehicles().filter(v => v.status === 'Available');
-  return ok(vehicles);
-}
-
-export async function apiGetAvailableDrivers() {
-  await delay();
-  const today = new Date().toISOString().split('T')[0];
-  const drivers = getDrivers().filter(d => {
-    if (d.status !== 'Available') return false;
-    if (d.status === 'Suspended') return false;
-    // Block expired license
-    if (d.licenseExpiry < today) return false;
-    return true;
-  });
-  return ok(drivers);
-}
-
-// Re-export types for convenience
-export type { Vehicle, Driver, Trip, MaintenanceRecord, FuelLog, Expense, VehicleStatus, DriverStatus, TripStatus };

@@ -12,18 +12,20 @@ interface NavItem {
   to: string;
   icon: React.ReactNode;
   label: string;
-  module: Module;
+  /** If set, item is hidden when the role lacks access to this module.
+   *  Items without a module (dashboard, maintenance, settings) are always shown. */
+  module?: Module;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { to: '/dashboard',   icon: <LayoutDashboard size={18} />, label: 'Dashboard',       module: 'dashboard'    },
-  { to: '/fleet',       icon: <Truck size={18} />,           label: 'Fleet',            module: 'fleet'        },
-  { to: '/drivers',     icon: <Users size={18} />,           label: 'Drivers',          module: 'drivers'      },
-  { to: '/trips',       icon: <Navigation size={18} />,      label: 'Trips',            module: 'trips'        },
-  { to: '/maintenance', icon: <Wrench size={18} />,          label: 'Maintenance',      module: 'maintenance'  },
-  { to: '/fuel',        icon: <Fuel size={18} />,            label: 'Fuel & Expenses',  module: 'fuel'         },
-  { to: '/analytics',   icon: <BarChart3 size={18} />,       label: 'Analytics',        module: 'analytics'    },
-  { to: '/settings',    icon: <Settings size={18} />,        label: 'Settings',         module: 'settings'     },
+  { to: '/dashboard',   icon: <LayoutDashboard size={18} />, label: 'Dashboard'       },
+  { to: '/fleet',       icon: <Truck size={18} />,           label: 'Fleet',           module: 'fleet'     },
+  { to: '/drivers',     icon: <Users size={18} />,           label: 'Drivers',         module: 'drivers'   },
+  { to: '/trips',       icon: <Navigation size={18} />,      label: 'Trips',           module: 'trips'     },
+  { to: '/maintenance', icon: <Wrench size={18} />,          label: 'Maintenance'                          },
+  { to: '/fuel',        icon: <Fuel size={18} />,            label: 'Fuel & Expenses', module: 'fuel'      },
+  { to: '/analytics',   icon: <BarChart3 size={18} />,       label: 'Analytics',       module: 'analytics' },
+  { to: '/settings',    icon: <Settings size={18} />,        label: 'Settings'                             },
 ];
 
 interface SidebarProps {
@@ -41,7 +43,9 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
     onClose?.();
   };
 
-  const visibleItems = NAV_ITEMS.filter(item => canAccess(item.module));
+  const visibleItems = NAV_ITEMS.filter(item =>
+    item.module ? canAccess(item.module) : true,
+  );
 
   const handleNavClick = () => {
     onClose?.();

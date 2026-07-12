@@ -3,10 +3,15 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
 import { KpiCard } from '../components/shared/KpiCard';
-import { apiGetAnalyticsKpis } from '../api';
-import { Fuel, Gauge, DollarSign, TrendingUp } from 'lucide-react';
+import { apiGetAnalyticsKpis, getToken } from '../api';
+import { Fuel, Gauge, DollarSign, TrendingUp, Download } from 'lucide-react';
+import { toast } from 'sonner';
 
-const COSTLIEST_COLORS = ['#ef4444', '#f97316', '#f59e0b'];
+// Five colours — one per ranked vehicle (backend returns top 5)
+const COSTLIEST_COLORS = ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#22d3ee'];
+const TOP_COSTLIEST_COUNT = 5;
+
+const BASE_URL = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:5000';
 
 interface AnalyticsData {
   fuelEfficiency: number;
@@ -30,36 +35,95 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 export default function Analytics() {
-  const [data,    setData]    = useState<AnalyticsData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data,        setData]        = useState<AnalyticsData | null>(null);
+  const [loading,     setLoading]     = useState(true);
+  const [exporting,   setExporting]   = useState(false);
 
   useEffect(() => {
     apiGetAnalyticsKpis().then(r => {
       if (r.success && r.data) setData(r.data as AnalyticsData);
+      else if (!r.success) toast.error(r.error ?? 'Failed to load analytics.');
       setLoading(false);
     });
   }, []);
+
+  const handleExportCsv = async () => {
+    setExporting(true);
+    try {
+      const token = getToken();
+      const res = await fetch(`${BASE_URL}/api/reports/export.csv`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        toast.error(json?.error ?? `Export failed (HTTP ${res.status})`);
+        return;
+      }
+
+      // Trigger browser download
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = 'transitops-report.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('CSV export downloaded.');
+    } catch (err) {
+      toast.error('Export failed — is the backend running?');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const maxCost = data?.topCostliest[0]?.totalCost ?? 1;
 
   return (
     <div className="animate-fade-in">
-      <div className="mb-6">
-        <h1 className="text-xl font-bold text-base-text">Reports &amp; Analytics</h1>
-        <p className="text-xs text-base-muted mt-0.5">Fleet performance metrics and financial overview</p>
+      {/* Page header */}
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-base-text">Reports &amp; Analytics</h1>
+          <p className="text-xs text-base-muted mt-0.5">Fleet performance metrics and financial overview</p>
+        </div>
+
+        {/* CSV export — top-right, amber primary-action style */}
+        <button
+          onClick={handleExportCsv}
+          disabled={exporting || loading}
+          className="btn-primary flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed flex-shrink-0"
+          aria-label="Export analytics as CSV"
+        >
+          {exporting ? (
+            <>
+              <div className="w-3.5 h-3.5 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+              Exporting…
+            </>
+          ) : (
+            <>
+              <Download size={14} />
+              Export CSV
+            </>
+          )}
+        </button>
       </div>
 
       {/* KPI Cards */}
       {loading ? (
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-2">
-          {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-24 rounded-xl bg-white/[0.03] animate-pulse border border-white/[0.06]" />)}
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-24 rounded-xl bg-white/[0.03] animate-pulse border border-white/[0.06]" />
+          ))}
         </div>
       ) : data && (
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-1">
-          <KpiCard label="Fuel Efficiency" value={data.fuelEfficiency} suffix="km/l" borderColor="green" icon={<Fuel size={20} />} />
-          <KpiCard label="Fleet Utilization" value={data.fleetUtilization} suffix="%" borderColor="blue" icon={<Gauge size={20} />} />
-          <KpiCard label="Operational Cost" value={`₹${(data.operationalCost / 1000).toFixed(1)}k`} borderColor="orange" icon={<DollarSign size={20} />} />
-          <KpiCard label="Vehicle ROI" value={data.vehicleRoi} suffix="%" borderColor="amber" icon={<TrendingUp size={20} />} />
+          <KpiCard label="Fuel Efficiency"  value={data.fuelEfficiency}  suffix="km/l" borderColor="green"  icon={<Fuel size={20} />} />
+          <KpiCard label="Fleet Utilization" value={data.fleetUtilization} suffix="%"    borderColor="blue"   icon={<Gauge size={20} />} />
+          <KpiCard label="Operational Cost"  value={`₹${(data.operationalCost / 1000).toFixed(1)}k`} borderColor="orange" icon={<DollarSign size={20} />} />
+          <KpiCard label="Vehicle ROI"       value={data.vehicleRoi}      suffix="%"    borderColor="amber"  icon={<TrendingUp size={20} />} />
         </div>
       )}
 
@@ -101,12 +165,14 @@ export default function Analytics() {
           )}
         </div>
 
-        {/* Top Costliest Vehicles */}
+        {/* Top 5 Costliest Vehicles */}
         <div className="card">
           <div className="section-header mb-4">Top Costliest Vehicles</div>
           {loading ? (
             <div className="space-y-4">
-              {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-10 rounded bg-white/[0.03] animate-pulse" />)}
+              {Array.from({ length: TOP_COSTLIEST_COUNT }).map((_, i) => (
+                <div key={i} className="h-10 rounded bg-white/[0.03] animate-pulse" />
+              ))}
             </div>
           ) : data && data.topCostliest.length > 0 ? (
             <div className="space-y-4">
@@ -119,12 +185,17 @@ export default function Analytics() {
                         <span className="text-xs font-bold w-5 text-base-muted">#{i + 1}</span>
                         <span className="text-sm font-medium text-base-text">{item.vehicle.name}</span>
                       </div>
-                      <span className="text-sm font-bold text-base-text tabular-nums">₹{item.totalCost.toLocaleString()}</span>
+                      <span className="text-sm font-bold text-base-text tabular-nums">
+                        ₹{item.totalCost.toLocaleString()}
+                      </span>
                     </div>
                     <div className="h-2 bg-white/[0.05] rounded-full overflow-hidden">
                       <div
                         className="h-full rounded-full transition-all duration-700"
-                        style={{ width: `${pct}%`, backgroundColor: COSTLIEST_COLORS[i] }}
+                        style={{
+                          width: `${pct}%`,
+                          backgroundColor: COSTLIEST_COLORS[i] ?? COSTLIEST_COLORS[COSTLIEST_COLORS.length - 1],
+                        }}
                       />
                     </div>
                   </div>

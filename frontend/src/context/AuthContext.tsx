@@ -1,12 +1,14 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { type Role, checkPermission, canAccessModule, type Module, type Action } from '../lib/rolePermissions';
-import { ROLE_BY_EMAIL } from '../api/mockData';
 import { cacheGet, cacheSet, cacheRemove, sessionGet, sessionSet, sessionRemove } from '../lib/offlineCache';
+import { apiLogin as apiLoginCall, removeToken, setToken } from '../api';
 
 interface AuthUser {
-  id: string;
-  name: string;
+  id: number;
   email: string;
+  /** Display name derived from email prefix (backend doesn't store name). */
+  name: string;
+  /** Initials avatar derived from name. */
   avatar: string;
 }
 
@@ -28,9 +30,22 @@ interface AuthContextValue extends AuthState {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 const MAX_FAILED_ATTEMPTS = 5;
-const SESSION_KEY = 'session';
-const LOCKOUT_KEY = 'lockout';
+const SESSION_KEY  = 'session';
+const LOCKOUT_KEY  = 'lockout';
 const REMEMBER_KEY = 'rememberMe';
+
+/** Derive a display name from an email address (e.g. "fleet@transitops.in" → "Fleet"). */
+function nameFromEmail(email: string): string {
+  const local = email.split('@')[0];
+  return local.charAt(0).toUpperCase() + local.slice(1);
+}
+
+/** Two-letter initials from a name string. */
+function initialsFrom(name: string): string {
+  const parts = name.split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+}
 
 function loadSavedSession(): AuthState {
   const remembered = cacheGet<boolean>(REMEMBER_KEY);
@@ -49,9 +64,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return cacheGet<Record<string, number>>(LOCKOUT_KEY) ?? {};
   });
 
-  const isLocked = (email: string): boolean => {
-    return (failedAttempts[email] ?? 0) >= MAX_FAILED_ATTEMPTS;
-  };
+  const isLocked = (email: string): boolean =>
+    (failedAttempts[email] ?? 0) >= MAX_FAILED_ATTEMPTS;
 
   const incrementFailed = (email: string) => {
     const updated = { ...failedAttempts, [email]: (failedAttempts[email] ?? 0) + 1 };
@@ -72,49 +86,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     role: Role,
     remember = false,
   ): Promise<{ success: boolean; error: string | null }> => {
-    // Check lockout first
+    // Frontend lockout guard (mirrors backend, for instant UX feedback)
     if (isLocked(email)) {
-      return { success: false, error: 'Account locked after 5 failed attempts. Please contact your administrator.' };
-    }
-
-    const { apiLogin } = await import('../api');
-    const res = await apiLogin(email, password);
-
-    if (!res.success || !res.data) {
-      incrementFailed(email);
-      const remaining = MAX_FAILED_ATTEMPTS - (failedAttempts[email] ?? 0) - 1;
-      if (remaining <= 0) {
-        return { success: false, error: 'Account locked after 5 failed attempts. Please contact your administrator.' };
-      }
-      return { success: false, error: `${res.error} ${remaining} attempt${remaining !== 1 ? 's' : ''} remaining.` };
-    }
-
-    // Validate that role matches allowed role for this email in demo
-    const allowedRole = ROLE_BY_EMAIL[email];
-    if (allowedRole && allowedRole !== role) {
-      incrementFailed(email);
-      const remaining = MAX_FAILED_ATTEMPTS - (failedAttempts[email] ?? 0) - 1;
-      if (remaining <= 0) {
-        return { success: false, error: 'Account locked after 5 failed attempts. Please contact your administrator.' };
-      }
       return {
         success: false,
-        error: `Role mismatch. This account is registered as "${allowedRole}". ${remaining} attempt${remaining !== 1 ? 's' : ''} remaining.`,
+        error: 'Account locked after 5 failed attempts. Please contact your administrator.',
       };
     }
 
+    const res = await apiLoginCall(email, password, role);
+
+    if (!res.success || !res.data) {
+      // Backend handles lockout too — reflect its message directly
+      const msg = res.error ?? 'Invalid credentials.';
+      incrementFailed(email);
+      return { success: false, error: msg };
+    }
+
     resetFailed(email);
+
+    const name   = nameFromEmail(email);
+    const avatar = initialsFrom(name);
+
     const newState: AuthState = {
-      user: {
-        id: res.data.id,
-        name: res.data.name,
-        email: res.data.email,
-        avatar: res.data.avatar,
-      },
+      user: { id: res.data.user.id, email: res.data.user.email, name, avatar },
       role,
       isAuthenticated: true,
     };
+
     setAuthState(newState);
+
+    // Persist session (without token — token is already in localStorage via setToken)
     cacheRemove(SESSION_KEY);
     sessionRemove(SESSION_KEY);
     if (remember) {
@@ -124,11 +126,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       sessionSet(SESSION_KEY, newState);
       cacheRemove(REMEMBER_KEY);
     }
+
     return { success: true, error: null };
   };
 
   const logout = () => {
     setAuthState({ user: null, role: null, isAuthenticated: false });
+    removeToken();
     cacheRemove(SESSION_KEY);
     sessionRemove(SESSION_KEY);
     cacheRemove(REMEMBER_KEY);

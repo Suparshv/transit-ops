@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { apiGetSettings, apiUpdateSettings } from '../api';
-import { rolePermissions, type Role, type Module } from '../lib/rolePermissions';
+import { rolePermissions, ALL_ROLES, ALL_MODULES, type Role, type Module } from '../lib/rolePermissions';
 
 const ACTION_LABEL: Record<string, string> = {
   full: '✓ Full',
@@ -14,10 +14,11 @@ const ACTION_STYLE: Record<string, string> = {
   none: 'text-base-muted',
 };
 
-const ROLES: Role[] = ['Fleet Manager', 'Dispatcher', 'Safety Officer', 'Financial Analyst'];
-const MODULES: Module[] = ['fleet', 'drivers', 'trips', 'maintenance', 'fuel', 'analytics'];
-const MODULE_LABELS: Record<string, string> = {
-  fleet: 'Fleet', drivers: 'Drivers', trips: 'Trips', maintenance: 'Maint.', fuel: 'Fuel/Exp.', analytics: 'Analytics',
+const ROLES: Role[] = ALL_ROLES;
+// Matches backend/src/config/rolePermissions.ts ALL_MODULES exactly — 5 modules only.
+const MODULES: Module[] = ALL_MODULES;
+const MODULE_LABELS: Record<Module, string> = {
+  fleet: 'Fleet', drivers: 'Drivers', trips: 'Trips', fuel: 'Fuel/Exp.', analytics: 'Analytics',
 };
 
 const CURRENCIES = ['INR (₹)', 'USD ($)', 'EUR (€)', 'GBP (£)'];

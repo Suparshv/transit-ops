@@ -68,9 +68,8 @@ function AppRoutes() {
           <Route path="/trips" element={<TripDispatcher />} />
         </Route>
 
-        <Route element={<RequireModule module="maintenance" />}>
-          <Route path="/maintenance" element={<Maintenance />} />
-        </Route>
+        {/* maintenance and settings are always accessible — not RBAC-gated modules */}
+        <Route path="/maintenance" element={<Maintenance />} />
 
         <Route element={<RequireModule module="fuel" />}>
           <Route path="/fuel" element={<FuelExpenses />} />
@@ -80,9 +79,7 @@ function AppRoutes() {
           <Route path="/analytics" element={<Analytics />} />
         </Route>
 
-        <Route element={<RequireModule module="settings" />}>
-          <Route path="/settings" element={<Settings />} />
-        </Route>
+        <Route path="/settings" element={<Settings />} />
       </Route>
 
       <Route path="/" element={<Navigate to="/dashboard" replace />} />

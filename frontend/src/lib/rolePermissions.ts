@@ -1,54 +1,53 @@
 // rolePermissions.ts
-// THE SINGLE SOURCE OF TRUTH for the RBAC matrix.
-// This must be the ONLY place the permission matrix is defined.
-// Both frontend route guards and the AuthContext read from here.
-// Mirror this same structure in backend auth middleware when connecting.
+// Frontend mirror of backend/src/config/rolePermissions.ts.
+// These two files MUST stay in sync — same module names, same role names, same matrix.
+// Do not add modules here that don't exist in the backend config.
 
 export type Role = 'Fleet Manager' | 'Dispatcher' | 'Safety Officer' | 'Financial Analyst';
-export type Module = 'fleet' | 'drivers' | 'trips' | 'maintenance' | 'fuel' | 'analytics' | 'settings' | 'dashboard';
+
+/** Matches backend's Module type exactly — 5 modules only. */
+export type Module = 'fleet' | 'drivers' | 'trips' | 'fuel' | 'analytics';
+
 export type Action = 'full' | 'view' | 'none';
 
-// Permission matrix from CLAUDE.md Section 5 and Design.md Section 6
+/**
+ * RBAC permission matrix — mirrors backend/src/config/rolePermissions.ts exactly.
+ *
+ * | Role              | Fleet | Drivers | Trips | Fuel/Exp | Analytics |
+ * |-------------------|-------|---------|-------|----------|-----------|
+ * | Fleet Manager     | full  | full    | none  | none     | full      |
+ * | Dispatcher        | view  | none    | full  | none     | none      |
+ * | Safety Officer    | none  | full    | view  | none     | none      |
+ * | Financial Analyst | view  | none    | none  | full     | full      |
+ */
 export const rolePermissions: Record<Role, Record<Module, Action>> = {
   'Fleet Manager': {
-    dashboard:   'full',
-    fleet:       'full',
-    drivers:     'full',
-    trips:       'none',
-    maintenance: 'full',
-    fuel:        'none',
-    analytics:   'full',
-    settings:    'full',
+    fleet:     'full',
+    drivers:   'full',
+    trips:     'none',
+    fuel:      'none',
+    analytics: 'full',
   },
   'Dispatcher': {
-    dashboard:   'full',
-    fleet:       'view',
-    drivers:     'none',
-    trips:       'full',
-    maintenance: 'none',
-    fuel:        'none',
-    analytics:   'none',
-    settings:    'none',
+    fleet:     'view',
+    drivers:   'none',
+    trips:     'full',
+    fuel:      'none',
+    analytics: 'none',
   },
   'Safety Officer': {
-    dashboard:   'full',
-    fleet:       'none',
-    drivers:     'full',
-    trips:       'view',
-    maintenance: 'none',
-    fuel:        'none',
-    analytics:   'none',
-    settings:    'none',
+    fleet:     'none',
+    drivers:   'full',
+    trips:     'view',
+    fuel:      'none',
+    analytics: 'none',
   },
   'Financial Analyst': {
-    dashboard:   'full',
-    fleet:       'view',
-    drivers:     'none',
-    trips:       'none',
-    maintenance: 'none',
-    fuel:        'full',
-    analytics:   'full',
-    settings:    'none',
+    fleet:     'view',
+    drivers:   'none',
+    trips:     'none',
+    fuel:      'full',
+    analytics: 'full',
   },
 };
 
@@ -57,6 +56,14 @@ export const ALL_ROLES: Role[] = [
   'Dispatcher',
   'Safety Officer',
   'Financial Analyst',
+];
+
+export const ALL_MODULES: Module[] = [
+  'fleet',
+  'drivers',
+  'trips',
+  'fuel',
+  'analytics',
 ];
 
 /**
@@ -71,7 +78,7 @@ export function checkPermission(role: Role, module: Module, required: Action = '
   return false;
 }
 
-/** Returns whether a nav item should be visible at all for a given role */
+/** Returns whether a nav item should be visible at all for a given role. */
 export function canAccessModule(role: Role, module: Module): boolean {
   return rolePermissions[role][module] !== 'none';
 }

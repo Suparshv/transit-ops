@@ -22,7 +22,6 @@ export interface Vehicle {
   odometerKm: number;
   acquisitionCost: number;
   status: VehicleStatus;
-  region: string;
 }
 
 export interface Driver {

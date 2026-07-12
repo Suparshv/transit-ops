@@ -11,14 +11,13 @@ import {
 
 const TYPES = ['Van', 'Truck', 'Bus', 'Bike'] as const;
 const STATUSES: VehicleStatus[] = ['Available', 'On Trip', 'In Shop', 'Retired'];
-const REGIONS = ['Mumbai', 'Pune', 'Delhi', 'Bangalore', 'Ahmedabad', 'Kolkata', 'Chennai'];
 
 // ─── Add Vehicle Modal ────────────────────────────────────────────────────────
 
 function AddVehicleModal({ onClose, onSave }: { onClose: () => void; onSave: (v: Vehicle) => void }) {
   const [form, setForm] = useState({
-    regNo: '', name: '', type: 'Van' as Vehicle['type'],
-    capacity: 500, odometer: 0, acqCost: 0, status: 'Available' as VehicleStatus, region: 'Mumbai',
+    registrationNumber: '', name: '', type: 'Van' as Vehicle['type'],
+    capacityKg: 500, odometerKm: 0, acquisitionCost: 0, status: 'Available' as VehicleStatus,
   });
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -53,7 +52,7 @@ function AddVehicleModal({ onClose, onSave }: { onClose: () => void; onSave: (v:
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
               <label className="form-label">Registration No. (unique)</label>
-              <input className="form-input" required value={form.regNo} onChange={e => setForm(f => ({ ...f, regNo: e.target.value }))} placeholder="MH12-AB-1234" />
+              <input className="form-input" required value={form.registrationNumber} onChange={e => setForm(f => ({ ...f, registrationNumber: e.target.value }))} placeholder="MH12-AB-1234" />
             </div>
             <div>
               <label className="form-label">Name / Model</label>
@@ -67,21 +66,15 @@ function AddVehicleModal({ onClose, onSave }: { onClose: () => void; onSave: (v:
             </div>
             <div>
               <label className="form-label">Capacity (kg)</label>
-              <input type="number" min={1} className="form-input" required value={form.capacity} onChange={e => setForm(f => ({ ...f, capacity: +e.target.value }))} />
+              <input type="number" min={1} className="form-input" required value={form.capacityKg} onChange={e => setForm(f => ({ ...f, capacityKg: +e.target.value }))} />
             </div>
             <div>
               <label className="form-label">Odometer (km)</label>
-              <input type="number" min={0} className="form-input" required value={form.odometer} onChange={e => setForm(f => ({ ...f, odometer: +e.target.value }))} />
+              <input type="number" min={0} className="form-input" required value={form.odometerKm} onChange={e => setForm(f => ({ ...f, odometerKm: +e.target.value }))} />
             </div>
             <div>
               <label className="form-label">Acq. Cost (₹)</label>
-              <input type="number" min={0} className="form-input" required value={form.acqCost} onChange={e => setForm(f => ({ ...f, acqCost: +e.target.value }))} />
-            </div>
-            <div>
-              <label className="form-label">Region</label>
-              <select className="form-input cursor-pointer" value={form.region} onChange={e => setForm(f => ({ ...f, region: e.target.value }))}>
-                {REGIONS.map(r => <option key={r} style={{ background: '#18181d' }}>{r}</option>)}
-              </select>
+              <input type="number" min={0} className="form-input" required value={form.acquisitionCost} onChange={e => setForm(f => ({ ...f, acquisitionCost: +e.target.value }))} />
             </div>
           </div>
           <div className="flex gap-3 pt-2">
@@ -100,13 +93,12 @@ function AddVehicleModal({ onClose, onSave }: { onClose: () => void; onSave: (v:
 
 function EditVehicleModal({ vehicle, onClose, onSave }: { vehicle: Vehicle; onClose: () => void; onSave: (v: Vehicle) => void }) {
   const [form, setForm] = useState({
-    name:     vehicle.name,
-    type:     vehicle.type,
-    capacity: vehicle.capacity,
-    odometer: vehicle.odometer,
-    acqCost:  vehicle.acqCost,
-    status:   vehicle.status,
-    region:   vehicle.region,
+    name:            vehicle.name,
+    type:            vehicle.type,
+    capacityKg:      vehicle.capacityKg,
+    odometerKm:      vehicle.odometerKm,
+    acquisitionCost: vehicle.acquisitionCost,
+    status:          vehicle.status,
   });
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -128,7 +120,7 @@ function EditVehicleModal({ vehicle, onClose, onSave }: { vehicle: Vehicle; onCl
         <div className="flex items-center justify-between mb-5">
           <div>
             <h2 className="text-lg font-bold text-base-text">Edit Vehicle</h2>
-            <p className="text-xs text-base-muted mt-0.5 font-mono">{vehicle.regNo}</p>
+            <p className="text-xs text-base-muted mt-0.5 font-mono">{vehicle.registrationNumber}</p>
           </div>
           <button type="button" onClick={onClose} className="p-1.5 rounded-lg text-base-muted hover:text-base-text hover:bg-white/[0.06] transition-colors">
             <X size={16} />
@@ -160,21 +152,15 @@ function EditVehicleModal({ vehicle, onClose, onSave }: { vehicle: Vehicle; onCl
             </div>
             <div>
               <label className="form-label">Capacity (kg)</label>
-              <input type="number" min={1} className="form-input" required value={form.capacity} onChange={e => setForm(f => ({ ...f, capacity: +e.target.value }))} />
+              <input type="number" min={1} className="form-input" required value={form.capacityKg} onChange={e => setForm(f => ({ ...f, capacityKg: +e.target.value }))} />
             </div>
             <div>
               <label className="form-label">Odometer (km)</label>
-              <input type="number" min={0} className="form-input" required value={form.odometer} onChange={e => setForm(f => ({ ...f, odometer: +e.target.value }))} />
+              <input type="number" min={0} className="form-input" required value={form.odometerKm} onChange={e => setForm(f => ({ ...f, odometerKm: +e.target.value }))} />
             </div>
             <div>
               <label className="form-label">Acq. Cost (₹)</label>
-              <input type="number" min={0} className="form-input" required value={form.acqCost} onChange={e => setForm(f => ({ ...f, acqCost: +e.target.value }))} />
-            </div>
-            <div>
-              <label className="form-label">Region</label>
-              <select className="form-input cursor-pointer" value={form.region} onChange={e => setForm(f => ({ ...f, region: e.target.value }))}>
-                {REGIONS.map(r => <option key={r} style={{ background: '#18181d' }}>{r}</option>)}
-              </select>
+              <input type="number" min={0} className="form-input" required value={form.acquisitionCost} onChange={e => setForm(f => ({ ...f, acquisitionCost: +e.target.value }))} />
             </div>
           </div>
           <div className="flex gap-3 pt-2">
@@ -214,7 +200,7 @@ export default function VehicleRegistry() {
   const filtered = vehicles.filter(v => {
     if (filterType   !== 'All' && v.type   !== filterType)   return false;
     if (filterStatus !== 'All' && v.status !== filterStatus) return false;
-    if (search && !v.regNo.toLowerCase().includes(search.toLowerCase()) &&
+    if (search && !v.registrationNumber.toLowerCase().includes(search.toLowerCase()) &&
         !v.name.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
@@ -274,7 +260,7 @@ export default function VehicleRegistry() {
         ) : (
           <DataTable
             columns={[
-              { key: 'regNo',    label: 'Reg. No. (Unique)', render: v => <span className="font-mono text-xs text-accent">{v.regNo}</span> },
+              { key: 'registrationNumber', label: 'Reg. No. (Unique)', render: v => <span className="font-mono text-xs text-accent">{v.registrationNumber}</span> },
               { key: 'name',     label: 'Name / Model'   },
               { key: 'type',     label: 'Type',           render: v => (
                 <span className="flex items-center gap-1.5">
@@ -282,10 +268,9 @@ export default function VehicleRegistry() {
                   {v.type}
                 </span>
               )},
-              { key: 'capacity', label: 'Capacity',       render: v => `${v.capacity.toLocaleString()} kg` },
-              { key: 'odometer', label: 'Odometer',       render: v => `${v.odometer.toLocaleString()} km` },
-              { key: 'acqCost',  label: 'Acq. Cost',      render: v => `₹${v.acqCost.toLocaleString()}` },
-              { key: 'region',   label: 'Region'          },
+              { key: 'capacityKg', label: 'Capacity',       render: v => `${v.capacityKg.toLocaleString()} kg` },
+              { key: 'odometerKm', label: 'Odometer',       render: v => `${v.odometerKm.toLocaleString()} km` },
+              { key: 'acquisitionCost',  label: 'Acq. Cost',      render: v => `₹${v.acquisitionCost.toLocaleString()}` },
               { key: 'status',   label: 'Status',         render: v => <StatusBadge status={v.status} /> },
               ...(canEdit ? [{
                 key: 'actions', label: '',
